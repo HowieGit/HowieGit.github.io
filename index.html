@@ -4,8 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KMB Real-time ETA Dashboard • 九巴實時到站預報</title>
+  
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Leaflet CSS & JS CDN (Real Base Map integration) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
   <style>
     /* Custom scrollbar styles for a modern dark-mode aesthetic */
     ::-webkit-scrollbar {
@@ -21,6 +27,22 @@
     }
     ::-webkit-scrollbar-thumb:hover {
       background: #ef4444; 
+    }
+
+    /* Leaflet popup dark-mode styling override */
+    .leaflet-popup-content-wrapper {
+      background: #1e293b !important; /* Slate 800 */
+      color: #f8fafc !important; /* Slate 50 */
+      border: 1px solid #475569; /* Slate 600 */
+      border-radius: 12px !important;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5) !important;
+    }
+    .leaflet-popup-tip {
+      background: #1e293b !important;
+      border: 1px solid #475569;
+    }
+    .leaflet-popup-content {
+      margin: 8px 12px !important;
     }
   </style>
 </head>
@@ -131,14 +153,14 @@
       </div>
     </section>
 
-    <!-- RIGHT COLUMN: Selected Stop ETA, GPS Route Maps, & Live Timeline -->
+    <!-- RIGHT COLUMN: Selected Stop ETA, Real Maps -->
     <section class="flex-1 flex flex-col gap-4">
       
       <!-- INITIAL WELCOME PANEL (Visible when no route is active) -->
       <div id="welcome-panel" class="bg-slate-800 border border-slate-700 rounded-2xl p-8 shadow-xl text-center flex flex-col items-center justify-center min-h-[450px]">
         <div class="w-16 h-16 rounded-full bg-slate-900/60 border border-slate-700 flex items-center justify-center mb-4 text-slate-400">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
         </div>
         <h3 id="welcome-title" class="text-lg font-bold text-slate-200">
@@ -160,7 +182,7 @@
       <div id="eta-card" class="hidden bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl relative overflow-hidden">
         <div class="absolute top-0 right-0 p-8 opacity-5">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-44 w-44" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </div>
 
@@ -227,7 +249,7 @@
         </div>
       </div>
 
-      <!-- GEOGRAPHIC PATH MAP CARD (Hidden by default) -->
+      <!-- GEOGRAPHIC REAL LEAFLET MAP CARD (Hidden by default) -->
       <div id="map-card" class="hidden bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
         <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-4 flex items-center space-x-2">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -237,60 +259,14 @@
           <span id="route-path-title">路線地圖軌跡 (GPS)</span>
         </h3>
 
-        <div class="relative bg-slate-900 border border-slate-800/80 rounded-xl p-2 overflow-hidden flex items-center justify-center">
-          <!-- Coordinate Scaled SVG Map -->
-          <svg
-            id="map-svg"
-            viewBox="0 0 300 160"
-            class="w-full h-auto max-h-[220px]"
-          >
-            <!-- Render grid dynamically for aesthetic backdrop -->
-            <g class="stroke-slate-800/40" stroke-width="0.5">
-              <line x1="50" y1="0" x2="50" y2="160" />
-              <line x1="100" y1="0" x2="100" y2="160" />
-              <line x1="150" y1="0" x2="150" y2="160" />
-              <line x1="200" y1="0" x2="200" y2="160" />
-              <line x1="250" y1="0" x2="250" y2="160" />
-              <line x1="0" y1="40" x2="300" y2="40" />
-              <line x1="0" y1="80" x2="300" y2="80" />
-              <line x1="0" y1="120" x2="300" y2="120" />
-            </g>
-            <path
-              id="map-path-line"
-              d=""
-              fill="none"
-              stroke="#dc2626"
-              stroke-width="4"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              class="opacity-90"
-            />
-            <g id="map-stops-layer">
-              <!-- Stop Nodes generated here -->
-            </g>
-          </svg>
+        <div class="relative bg-slate-900 border border-slate-800/80 rounded-xl overflow-hidden h-[300px]">
+          <!-- Real Leaflet Base Map Container -->
+          <div id="leaflet-map" class="w-full h-full z-10"></div>
 
-          <div class="absolute bottom-2 left-2 right-2 flex justify-between text-[10px] text-slate-500 bg-slate-900/90 px-2 py-1 rounded backdrop-blur">
-            <span id="map-scale-note">📍 地圖比例依經緯度自動適配</span>
+          <div class="absolute bottom-2 left-2 right-2 flex justify-between text-[10px] text-slate-500 bg-slate-900/90 px-2 py-1 rounded backdrop-blur z-20">
+            <span id="map-scale-note">📍 實時互動基礎地圖</span>
             <span id="map-interact-note" class="font-bold text-red-400">可點選站點圓點</span>
           </div>
-        </div>
-      </div>
-
-      <!-- FULL LINE TIMELINE (Hidden by default) -->
-      <div id="timeline-card" class="hidden bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wide flex items-center space-x-2">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-            </svg>
-            <span id="timeline-title">全線到站總覽</span>
-          </h3>
-          <span id="live-timeline-tag" class="text-[10px] bg-slate-700/60 px-2 py-0.5 rounded text-slate-400">即時更新</span>
-        </div>
-
-        <div id="full-timeline-container" class="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-          <!-- Dynamic timeline nodes loaded here -->
         </div>
       </div>
 
@@ -318,10 +294,19 @@
     let stopsList = []; // Ordered array from route-stop API
     let stopDetails = {}; // Cache map for stop attributes: { stopId: { name_tc, name_en, lat, long } }
     let loadingStops = false;
-    let etaData = []; // Raw predictions list
+    
+    // Split ETA Data Structures for Stability
+    let etaData = []; // Primary ETA predictions loaded directly for the selected stop (highly reliable)
+    let backgroundEtaData = []; // Secondary background list loaded via route-eta for sidebar badges
+    
     let selectedStopId = null;
     let refreshTimer = 30;
     let timerInterval = null;
+
+    // Leaflet Objects
+    let map = null;
+    let markersGroup = null;
+    let lineLayer = null;
 
     // Quick Recommendations
     const quickRoutes = ['1A', '2A', '101', '968', '68X', 'B1', 'E36', '978'];
@@ -359,7 +344,9 @@
         viewAll: '全線檢視',
         due: '到站',
         ontime: '準時',
-        stopIdLabel: '站點編號'
+        stopIdLabel: '站點編號',
+        mapInteractive: '📍 實時互動地圖',
+        mapHint: '可點擊地圖標記直接切換站點'
       },
       en: {
         title: 'KMB Real-time ETA Dashboard',
@@ -392,7 +379,9 @@
         viewAll: 'Full Timeline',
         due: 'Due',
         ontime: 'On time',
-        stopIdLabel: 'ID'
+        stopIdLabel: 'ID',
+        mapInteractive: '📍 Interactive Base Map',
+        mapHint: 'Click any map marker to switch stops'
       }
     };
 
@@ -416,7 +405,6 @@
         renderStopsUI();
         renderEtaPredictions();
         renderMapUI();
-        renderTimelineUI();
       }
     }
 
@@ -441,10 +429,8 @@
       document.getElementById('refresh-btn-title').title = t[lang].refreshNow;
       document.getElementById('upcoming-buses-title').innerText = t[lang].upcomingBuses;
       document.getElementById('route-path-title').innerText = t[lang].routePath;
-      document.getElementById('map-scale-note').innerText = lang === 'tc' ? '📍 地圖比例依經緯度自動適配' : '📍 Map auto-scaled by coordinates';
-      document.getElementById('map-interact-note').innerText = lang === 'tc' ? '可點選站點圓點' : 'Click nodes to query';
-      document.getElementById('timeline-title').innerText = t[lang].allStopsEta;
-      document.getElementById('live-timeline-tag').innerText = lang === 'tc' ? '即時更新' : 'Live Timeline';
+      document.getElementById('map-scale-note').innerText = t[lang].mapInteractive;
+      document.getElementById('map-interact-note').innerText = t[lang].mapHint;
       document.getElementById('footer-source-text').innerText = t[lang].about;
     }
 
@@ -521,6 +507,7 @@
       stopsList = [];
       selectedStopId = null;
       etaData = [];
+      backgroundEtaData = [];
       
       toggleStatePanels(false);
 
@@ -606,7 +593,6 @@
       const welcome = document.getElementById('welcome-panel');
       const etaCard = document.getElementById('eta-card');
       const mapCard = document.getElementById('map-card');
-      const timelineCard = document.getElementById('timeline-card');
       const directionCard = document.getElementById('direction-card');
       const stopsCard = document.getElementById('stops-card');
 
@@ -614,14 +600,12 @@
         welcome.classList.add('hidden');
         etaCard.classList.remove('hidden');
         mapCard.classList.remove('hidden');
-        timelineCard.classList.remove('hidden');
         directionCard.classList.remove('hidden');
         stopsCard.classList.remove('hidden');
       } else {
         welcome.classList.remove('hidden');
         etaCard.classList.add('hidden');
         mapCard.classList.add('hidden');
-        timelineCard.classList.add('hidden');
         directionCard.classList.add('hidden');
         stopsCard.classList.add('hidden');
       }
@@ -650,10 +634,11 @@
             selectedStopId = stopsList[0].stop;
           }
 
-          // Initial ETA pull
-          const etaRes = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-eta/${activeRoute}/${selectedDirection.service_type}`);
-          const etaJson = await etaRes.json();
-          etaData = etaJson.data || [];
+          // Fetch Dedicated Stop ETA (highly reliable specific endpoint)
+          await fetchStopEtaData();
+
+          // Background Fetch Route ETA for background badge calculations
+          fetchRouteEtaDataBackground();
 
           // Reveal UI structures
           toggleStatePanels(true);
@@ -661,7 +646,6 @@
           // Force instant views layout
           renderStopsUI();
           renderEtaPredictions();
-          renderTimelineUI();
 
           // Fetch precise coordinates and names dynamically
           await fetchStopDetailsInBatches(stopsList);
@@ -671,6 +655,35 @@
       } finally {
         loadingStops = false;
         document.getElementById('stops-loader').classList.add('hidden');
+      }
+    }
+
+    // Fetch ETAs for the selected stop directly from the reliable stop-eta API
+    async function fetchStopEtaData() {
+      if (!selectedStopId) return;
+      try {
+        const stopEtaRes = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${selectedStopId}`);
+        if (stopEtaRes.ok) {
+          const stopEtaJson = await stopEtaRes.json();
+          etaData = stopEtaJson.data || [];
+        }
+      } catch (e) {
+        console.error("Error fetching stop ETA:", e);
+      }
+    }
+
+    // Background fetch of the full route ETA to generate the side panel preview badges
+    async function fetchRouteEtaDataBackground() {
+      if (!activeRoute || !selectedDirection) return;
+      try {
+        const routeEtaRes = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-eta/${activeRoute}/${selectedDirection.service_type}`);
+        if (routeEtaRes.ok) {
+          const routeEtaJson = await routeEtaRes.json();
+          backgroundEtaData = routeEtaJson.data || [];
+          renderStopsUI(); // Update sidebar badges without interrupting main card
+        }
+      } catch (e) {
+        console.error("Background route ETA fetch failed:", e);
       }
     }
 
@@ -684,7 +697,6 @@
         renderStopsUI();
         renderEtaPredictions();
         renderMapUI();
-        renderTimelineUI();
         return;
       }
 
@@ -716,21 +728,17 @@
         renderStopsUI();
         renderEtaPredictions();
         renderMapUI();
-        renderTimelineUI();
       }
     }
 
-    // Refresh ETA Predictor only
+    // Refresh ETA Predictors only
     async function fetchEtaOnly() {
-      if (!activeRoute || !selectedDirection) return;
+      if (!activeRoute || !selectedDirection || !selectedStopId) return;
       try {
-        const etaRes = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-eta/${activeRoute}/${selectedDirection.service_type}`);
-        const etaJson = await etaRes.json();
-        etaData = etaJson.data || [];
-        
+        await fetchStopEtaData();
+        fetchRouteEtaDataBackground(); // Pull background badges as well
         renderEtaPredictions();
         renderStopsUI();
-        renderTimelineUI();
       } catch (err) {
         console.error('Error refreshing ETAs:', err);
       }
@@ -759,9 +767,14 @@
       stopsList = [];
       selectedStopId = null;
       etaData = [];
+      backgroundEtaData = [];
       document.getElementById('search-input').value = '';
       toggleStatePanels(false);
       renderQuickSearchTags();
+      
+      // Clear Map Markers and Polylines
+      if (markersGroup) markersGroup.clearLayers();
+      if (lineLayer) lineLayer.clearLayers();
     }
 
     /* RENDER SYSTEM FUNCTIONS */
@@ -853,10 +866,11 @@
         const details = stopDetails[stopItem.stop];
         const isSelected = selectedStopId === stopItem.stop;
         
-        // Match ETAs for quick-badge preview inside stop row
-        const stopEtas = etaData.filter(eta => 
+        // Match ETAs for quick-badge preview using background route-eta list with strict service-type validation
+        const stopEtas = backgroundEtaData.filter(eta => 
           eta.stop === stopItem.stop && 
-          eta.dir === selectedDirection?.boundCode
+          (eta.dir === selectedDirection?.boundCode || eta.dir === selectedDirection?.bound.substring(0, 1).toUpperCase()) &&
+          parseInt(eta.service_type) === parseInt(selectedDirection.service_type)
         ).sort((a, b) => a.eta_seq - b.eta_seq);
         
         const firstEtaMin = stopEtas[0] ? calculateMinutesLeft(stopEtas[0].eta) : null;
@@ -873,12 +887,14 @@
         const stopName = details ? (lang === 'tc' ? details.name_tc : details.name_en) : `Stop #${stopItem.seq}`;
 
         const row = document.createElement('button');
-        row.onclick = () => {
+        row.onclick = async () => {
           selectedStopId = stopItem.stop;
           renderStopsUI();
+          
+          // Pull target stop precise predictions first
+          await fetchStopEtaData();
           renderEtaPredictions();
           renderMapUI();
-          renderTimelineUI();
         };
         row.className = `w-full text-left p-3 rounded-xl border flex items-center justify-between transition-all group ${
           isSelected
@@ -930,14 +946,28 @@
         : '...';
       document.getElementById('active-stop-name').innerText = currentStopName;
 
-      // Match ETAs
-      const matchingEtas = etaData
+      // Match ETAs strictly by route, direction, and specific service configuration
+      const filteredEtas = etaData
         .filter(eta => 
-          eta.stop === selectedStopId && 
-          eta.dir === selectedDirection.boundCode && 
+          eta.route.trim().toUpperCase() === activeRoute.trim().toUpperCase() && 
+          (eta.dir === selectedDirection.boundCode || eta.dir === selectedDirection.bound.substring(0, 1).toUpperCase()) &&
           parseInt(eta.service_type) === parseInt(selectedDirection.service_type)
         )
-        .sort((a, b) => a.eta_seq - b.eta_seq);
+        .sort((a, b) => {
+          if (a.eta_seq !== b.eta_seq) return a.eta_seq - b.eta_seq;
+          return new Date(a.eta) - new Date(b.eta);
+        });
+
+      // Remove duplicate returns (same sequence or identical departure timestamps)
+      const seenTimes = new Set();
+      const matchingEtas = [];
+      filteredEtas.forEach(eta => {
+        const timeKey = eta.eta ? new Date(eta.eta).getTime() : `null-${eta.eta_seq}`;
+        if (!seenTimes.has(timeKey)) {
+          seenTimes.add(timeKey);
+          matchingEtas.push(eta);
+        }
+      });
 
       const listContainer = document.getElementById('eta-upcoming-list');
       listContainer.innerHTML = '';
@@ -1014,144 +1044,100 @@
       }
     }
 
-    // Dynamic scale map representation using relative-scaling coordinate system
+    // Initialize and update the Leaflet interactive base map
     function renderMapUI() {
+      // Setup dynamic dark tile grid once
+      if (!map) {
+        map = L.map('leaflet-map', {
+          zoomControl: true,
+          scrollWheelZoom: true
+        }).setView([22.3193, 114.1694], 12);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+          subdomains: 'abcd',
+          maxZoom: 20
+        }).addTo(map);
+
+        markersGroup = L.layerGroup().addTo(map);
+        lineLayer = L.layerGroup().addTo(map);
+      }
+
+      // Clear layers
+      markersGroup.clearLayers();
+      lineLayer.clearLayers();
+
       const activeStopsDetails = stopsList
         .map(s => {
-          return { stopId: s.stop, ...stopDetails[s.stop] };
+          return { seq: s.seq, stopId: s.stop, ...stopDetails[s.stop] };
         })
         .filter(d => d && d.lat && d.long);
 
       if (activeStopsDetails.length === 0) return;
 
-      // Extract Bounds
-      const lats = activeStopsDetails.map(item => item.lat);
-      const longs = activeStopsDetails.map(item => item.long);
-      const minLat = Math.min(...lats);
-      const maxLat = Math.max(...lats);
-      const minLong = Math.min(...longs);
-      const maxLong = Math.max(...longs);
+      // Polyline LatLng points array
+      const latlngs = activeStopsDetails.map(stop => [stop.lat, stop.long]);
 
-      const latRange = maxLat - minLat || 0.001;
-      const longRange = maxLong - minLong || 0.001;
+      // Connect stops with a red route-path line
+      const polyline = L.polyline(latlngs, {
+        color: '#dc2626', // Tailwind red-600
+        weight: 5,
+        opacity: 0.8,
+        lineJoin: 'round'
+      }).addTo(lineLayer);
 
-      // Map scale conversion parameters (viewbox is 300 width, 160 height)
-      const scaleCoord = (item) => {
-        const x = 20 + ((item.long - minLong) / longRange) * 260;
-        const y = 140 - ((item.lat - minLat) / latRange) * 120;
-        return { x, y };
-      };
+      // Pan & Zoom to fit full bus sequence flawlessly
+      map.fitBounds(polyline.getBounds(), { padding: [30, 30] });
 
-      const scaledPoints = activeStopsDetails.map(item => {
-        return {
-          ...scaleCoord(item),
-          stopId: item.stopId,
-          name: lang === 'tc' ? item.name_tc : item.name_en
-        };
-      });
+      // Add clickable individual stop markers
+      activeStopsDetails.forEach((stop) => {
+        const isSelected = selectedStopId === stop.stopId;
+        const name = lang === 'tc' ? stop.name_tc : stop.name_en;
 
-      // Construct SVG line trace
-      const pathString = scaledPoints.reduce((acc, pt, idx) => {
-        return acc + (idx === 0 ? `M ${pt.x} ${pt.y}` : ` L ${pt.x} ${pt.y}`);
-      }, '');
+        const markerColor = isSelected ? '#ef4444' : '#64748b'; // red-500 or slate-500
+        const markerBorder = isSelected ? '#ffffff' : '#334155';
+        const markerSize = isSelected ? 16 : 10;
 
-      document.getElementById('map-path-line').setAttribute('d', pathString);
+        // Custom HTML elements for Leaflet markers matching the UI theme
+        const customIcon = L.divIcon({
+          html: `<div style="
+            background-color: ${markerColor};
+            width: ${markerSize}px;
+            height: ${markerSize}px;
+            border-radius: 50%;
+            border: 2px solid ${markerBorder};
+            box-shadow: 0 0 8px rgba(0,0,0,0.6);
+            transition: all 0.2s ease;
+          "></div>`,
+          className: 'custom-leaflet-marker',
+          iconSize: [markerSize, markerSize],
+          iconAnchor: [markerSize/2, markerSize/2]
+        });
 
-      // Render interactive circles
-      const stopsLayer = document.getElementById('map-stops-layer');
-      stopsLayer.innerHTML = '';
-
-      scaledPoints.forEach((node) => {
-        const isNodeSelected = selectedStopId === node.stopId;
-        const radius = isNodeSelected ? 7 : 4;
-        const fillClass = isNodeSelected ? 'fill-white stroke-red-500 stroke-[3px]' : 'fill-slate-900 stroke-slate-400 stroke-[2px] hover:stroke-white hover:fill-slate-800';
-
-        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        circle.setAttribute('cx', node.x);
-        circle.setAttribute('cy', node.y);
-        circle.setAttribute('r', radius);
-        circle.setAttribute('class', `transition-all duration-300 cursor-pointer ${fillClass}`);
-        
-        // Setup direct tap trigger
-        circle.onclick = () => {
-          selectedStopId = node.stopId;
-          renderStopsUI();
-          renderEtaPredictions();
-          renderMapUI();
-          renderTimelineUI();
-        };
-
-        // Title tooltip
-        const titleTag = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-        titleTag.textContent = node.name;
-        circle.appendChild(titleTag);
-
-        stopsLayer.appendChild(circle);
+        L.marker([stop.lat, stop.long], { icon: customIcon })
+          .addTo(markersGroup)
+          .bindPopup(`
+            <div class="text-slate-100 font-sans p-1">
+              <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Stop ${stop.seq}</div>
+              <div class="text-sm font-black text-white my-0.5">${name}</div>
+              <div class="text-[9px] text-slate-500 font-mono mb-2">ID: ${stop.stopId}</div>
+              <button onclick="selectStopFromMap('${stop.stopId}')" class="w-full bg-red-600 hover:bg-red-700 text-white text-[11px] font-bold py-1 px-2 rounded transition-colors text-center cursor-pointer">
+                ${lang === 'tc' ? '選取此站' : 'Select Stop'}
+              </button>
+            </div>
+          `);
       });
     }
 
-    // Full Route Timeline prediction summary overview
-    function renderTimelineUI() {
-      const container = document.getElementById('full-timeline-container');
-      container.innerHTML = '';
-
-      stopsList.forEach((stopItem) => {
-        const stopDetailsItem = stopDetails[stopItem.stop];
-        const isSelected = selectedStopId === stopItem.stop;
-        
-        // Filter ETAs for this stop and order sequence
-        const stopEtas = etaData
-          .filter(eta => eta.stop === stopItem.stop && eta.dir === selectedDirection?.boundCode)
-          .sort((a, b) => a.eta_seq - b.eta_seq);
-
-        let badgeStackHTML = '';
-        if (stopEtas.length > 0) {
-          stopEtas.slice(0, 3).forEach((eta, eIdx) => {
-            const rem = calculateMinutesLeft(eta.eta);
-            if (rem !== null) {
-              const bgClass = eIdx === 0 
-                ? (rem <= 3 ? 'bg-red-500/20 text-red-400 font-extrabold' : 'bg-emerald-500/10 text-emerald-400')
-                : 'bg-slate-800 text-slate-400';
-              const text = rem <= 0 ? t[lang].due : `${rem}m`;
-              badgeStackHTML += `<span class="text-[10px] px-2 py-0.5 rounded font-mono ${bgClass}">${text}</span>`;
-            }
-          });
-        } else {
-          badgeStackHTML = `<span class="text-[10px] text-slate-600">--</span>`;
-        }
-
-        const stopName = stopDetailsItem ? (lang === 'tc' ? stopDetailsItem.name_tc : stopDetailsItem.name_en) : `Stop ${stopItem.seq}`;
-
-        const row = document.createElement('div');
-        row.onclick = () => {
-          selectedStopId = stopItem.stop;
-          renderStopsUI();
-          renderEtaPredictions();
-          renderMapUI();
-          renderTimelineUI();
-        };
-        row.className = `p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
-          isSelected
-            ? 'bg-slate-700/50 border-red-500'
-            : 'bg-slate-900/20 border-slate-700/40 hover:bg-slate-700/10'
-        }`;
-
-        row.innerHTML = `
-          <div class="flex items-center space-x-2.5 min-w-0">
-            <span class="text-xs text-slate-500 font-mono w-4 shrink-0">
-              ${stopItem.seq}.
-            </span>
-            <span class="text-sm font-bold truncate text-slate-200">
-              ${stopName}
-            </span>
-          </div>
-          <div class="flex items-center space-x-1 shrink-0">
-            ${badgeStackHTML}
-          </div>
-        `;
-        container.appendChild(row);
-      });
-    }
+    // Global selector proxy called by Map Popup buttons
+    window.selectStopFromMap = async function(stopId) {
+      selectedStopId = stopId;
+      renderStopsUI();
+      
+      await fetchStopEtaData();
+      renderEtaPredictions();
+      renderMapUI();
+    };
   </script>
 </body>
 </html>
