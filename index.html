@@ -987,16 +987,11 @@
 
       const latlngs = activeStopsDetails.map(stop => [stop.lat, stop.long]);
 
-      // Connect stops with standard route line
-      const polyline = L.polyline(latlngs, {
-        color: '#dc2626',
-        weight: 5,
-        opacity: 0.8,
-        lineJoin: 'round'
-      }).addTo(lineLayer);
-
       // Fit layout to view full list bounds
-      map.fitBounds(polyline.getBounds(), { padding: [30, 30] });
+      if (latlngs.length > 0) {
+        const bounds = L.latLngBounds(latlngs);
+        map.fitBounds(bounds, { padding: [30, 30] });
+      }
 
       // Plot route sequence bubbles on the Google Map
       activeStopsDetails.forEach((stop) => {
