@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KMB Real-time ETA Dashboard • 九巴實時到站預報</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Leaflet CSS & JS CDN (Real Base Map integration) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <style>
+    /* Custom scrollbar styles for a modern dark-mode aesthetic */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #1e293b; 
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #475569; 
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #ef4444; 
+    }
+
+    /* Leaflet popup dark-mode styling override */
+    .leaflet-popup-content-wrapper {
+      background: #1e293b !important; /* Slate 800 */
+      color: #f8fafc !important; /* Slate 50 */
+      border: 1px solid #475569; /* Slate 600 */
+      border-radius: 12px !important;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5) !important;
+    }
+    .leaflet-popup-tip {
+      background: #1e293b !important;
+      border: 1px solid #475569;
+    }
+    .leaflet-popup-content {
+      margin: 8px 12px !important;
+    }
+
+    /* Slight styling shift to make light Google Maps tiles harmonize with our dark UI dashboard */
+    .dark-map-container {
+      filter: saturate(1.1) brightness(0.9);
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-red-500 selection:text-white">
+
+  <!-- Header Bar -->
+  <header class="bg-slate-800 border-b border-slate-700 sticky top-0 z-50 shadow-md">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div onclick="resetSearch()" class="bg-red-600 hover:bg-red-700 text-white font-extrabold px-3 py-1.5 rounded-lg shadow-inner tracking-wider flex items-center space-x-1 cursor-pointer transition-colors">
+          <span class="text-lg">KMB</span>
+          <span class="text-xs bg-white text-red-600 px-1 rounded font-black">九巴</span>
+        </div>
+        <div>
+          <h1 id="header-title" class="text-lg md:text-xl font-bold tracking-tight">九巴 KMB 實時到站時間 (ETA)</h1>
+          <p id="header-subtitle" class="text-xs text-slate-400 hidden sm:block">直連政府開源 API • 實時到站預測</p>
+        </div>
+      </div>
+      
+      <!-- Language Toggle Button -->
+      <button onclick="toggleLanguage()" class="bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-600 transition-colors flex items-center space-x-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 11.37 7.31 16.5 3 19" />
+        </svg>
+        <span id="lang-btn-text">English</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 flex flex-col lg:flex-row gap-6">
+    
+    <!-- LEFT COLUMN: Search, Directions & Stop Sequencing -->
+    <section class="flex-1 lg:max-w-md flex flex-col gap-4">
+      
+      <!-- ROUTE SEARCH CARD -->
+      <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl">
+        <div class="flex items-center space-x-2 mb-3">
+          <span class="p-1.5 rounded-lg bg-red-500/10 text-red-500">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+            </svg>
+          </span>
+          <h2 id="search-card-title" class="text-base font-bold text-slate-200">搜尋路線</h2>
+        </div>
+
+        <form id="search-form" onsubmit="handleSearchSubmit(event)" class="flex gap-2">
+          <input
+            type="text"
+            id="search-input"
+            placeholder="輸入巴士路線 (例如 1A, 968, 68X)"
+            class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 transition-all uppercase"
+          />
+          <button
+            type="submit"
+            id="search-button"
+            class="bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded-xl font-bold text-sm shadow-md transition-all active:scale-95 flex items-center space-x-1.5"
+          >
+            <span id="search-btn-text">搜尋路線</span>
+          </button>
+        </form>
+
+        <!-- Search Error Box -->
+        <div id="search-error" class="hidden mt-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-xs flex items-center space-x-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+          </svg>
+          <span id="error-message"></span>
+        </div>
+      </div>
+
+      <!-- DIRECTION SELECTOR -->
+      <div id="direction-card" class="hidden bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl">
+        <h3 id="direction-card-title" class="text-sm font-semibold text-slate-400 mb-3 uppercase tracking-wide">
+          選擇行車方向
+        </h3>
+        <div id="directions-list" class="flex flex-col gap-2">
+          <!-- Direction buttons will be loaded here -->
+        </div>
+      </div>
+
+      <!-- STOPS SEQUENCE CONTAINER -->
+      <div id="stops-card" class="hidden bg-slate-800 border border-slate-700 rounded-2xl shadow-xl flex-1 flex flex-col min-h-[300px] max-h-[500px] overflow-hidden">
+        <div class="p-4 border-b border-slate-700 bg-slate-800/80 backdrop-blur flex justify-between items-center">
+          <div>
+            <h3 id="stops-card-title" class="font-bold text-slate-200">中途站點</h3>
+            <p id="stops-count" class="text-xs text-slate-400">0 個巴士站</p>
+          </div>
+          <div id="stops-loader" class="hidden animate-spin text-red-500">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+          </div>
+        </div>
+
+        <div id="stops-list-container" class="flex-1 overflow-y-auto p-4 space-y-2">
+          <!-- Dynamic stops go here -->
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT COLUMN: Selected Stop ETA, Real Maps -->
+    <section class="flex-1 flex flex-col gap-4">
+      
+      <!-- INITIAL WELCOME PANEL (Visible when no route is active) -->
+      <div id="welcome-panel" class="bg-slate-800 border border-slate-700 rounded-2xl p-8 shadow-xl text-center flex flex-col items-center justify-center min-h-[450px]">
+        <div class="w-16 h-16 rounded-full bg-slate-900/60 border border-slate-700 flex items-center justify-center mb-4 text-slate-400">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        </div>
+        <h3 id="welcome-title" class="text-lg font-bold text-slate-200">
+          開始您的實時巴士查詢
+        </h3>
+        <p id="welcome-text" class="text-slate-400 text-sm max-w-sm mt-2">
+          請在左側輸入或選擇想查詢的巴士路線編號（例如 1A 往返尖沙咀碼頭與中秀茂坪），接著即刻為您加載最新即時班次預報！
+        </p>
+        
+        <div class="mt-6 p-4 bg-slate-900/40 border border-slate-800 rounded-xl flex items-center space-x-3 text-left max-w-md">
+          <span class="p-2 rounded-lg bg-red-500/10 text-red-400 shrink-0">💡</span>
+          <span id="welcome-tip" class="text-xs text-slate-500">
+            本系統不預載龐大的巴士站數據字典，而是當您點擊「搜尋路線」按鈕時才按需發起 API 呼叫，提供最精確且流暢的極致體驗。
+          </span>
+        </div>
+      </div>
+
+      <!-- ETA PREDICTIONS CARD (Hidden by default) -->
+      <div id="eta-card" class="hidden bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+        <div class="absolute top-0 right-0 p-8 opacity-5">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-44 w-44" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-700/60 relative z-10">
+          <div>
+            <div class="flex items-center space-x-2 mb-1">
+              <span id="active-route-badge" class="bg-red-600 text-white font-extrabold px-2.5 py-0.5 rounded text-sm shadow">
+                --
+              </span>
+              <span id="active-route-dest" class="text-xs text-slate-400 uppercase tracking-widest">
+                往 --
+              </span>
+            </div>
+            <h2 id="active-stop-name" class="text-2xl font-black text-white">
+              載入站點中...
+            </h2>
+            <p class="text-xs text-slate-400 mt-1 flex items-center space-x-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+              <span id="eta-status-label">即時到站預測 (ETA)</span>
+            </p>
+          </div>
+
+          <!-- Manual Refresh & Auto Countdown Widget -->
+          <div class="flex items-center space-x-3 shrink-0 self-start sm:self-center">
+            <div class="relative w-10 h-10 flex items-center justify-center">
+              <svg class="absolute inset-0 w-full h-full transform -rotate-90">
+                <circle cx="20" cy="20" r="16" class="stroke-slate-700 fill-none" stroke-width="2.5" />
+                <circle
+                  id="countdown-progress-circle"
+                  cx="20"
+                  cy="20"
+                  r="16"
+                  class="stroke-red-500 fill-none transition-all duration-1000"
+                  stroke-width="2.5"
+                  stroke-dasharray="100"
+                  stroke-dashoffset="0"
+                />
+              </svg>
+              <span id="countdown-timer-text" class="text-[11px] font-bold text-slate-300 relative z-10">30s</span>
+            </div>
+
+            <button
+              onclick="triggerManualRefresh()"
+              class="bg-slate-700 hover:bg-slate-600 text-slate-200 p-2.5 rounded-xl border border-slate-600 hover:text-white transition-all flex items-center justify-center shadow"
+              id="refresh-btn-title"
+              title="立即手動更新"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" width="18">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 3v5H16.22" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- THE 3 LIVE ETAs LIST -->
+        <div class="mt-6 space-y-3 relative z-10">
+          <h4 id="upcoming-buses-title" class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+            即將抵達的 3 班車
+          </h4>
+
+          <div id="eta-upcoming-list" class="space-y-3">
+            <!-- Dynamically populated ETA nodes -->
+          </div>
+        </div>
+      </div>
+
+      <!-- GEOGRAPHIC REAL LEAFLET MAP CARD (Hidden by default) -->
+      <div id="map-card" class="hidden bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl">
+        <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-4 flex items-center space-x-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <span id="route-path-title">MAP</span>
+        </h3>
+
+        <div class="relative bg-slate-900 border border-slate-800/80 rounded-xl overflow-hidden h-[340px]">
+          <!-- Leaflet Container holding Google Maps tiles -->
+          <div id="leaflet-map" class="w-full h-full z-10 dark-map-container"></div>
+
+          <div class="absolute bottom-2 left-2 right-2 flex justify-between text-[10px] text-slate-500 bg-slate-900/90 px-2 py-1 rounded backdrop-blur z-20">
+            <span id="map-scale-note">📍 實時 Google Maps 互動地圖</span>
+            <span id="map-interact-note" class="font-bold text-red-400">可點選站點圓點</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-slate-950 text-slate-500 text-xs py-6 border-t border-slate-800">
+    <div class="max-w-7xl mx-auto px-4 text-center space-y-2">
+      <p id="footer-source-text">數據來源：香港政府 DATA.GOV.HK 交通資料 API。更新頻率為每分鐘。</p>
+      <p>&copy; 2026 KMB ETA Board. All rights reserved. Designed for commuters.</p>
+    </div>
+  </footer>
+
+  <!-- CORE SCRIPT LOGIC -->
+  <script>
+    // State Variables
+    let lang = 'tc'; // 'tc' or 'en'
+    let searchRoute = '';
+    let loading = false;
+    let activeRoute = null;
+    let directions = [];
+    let selectedDirection = null; // { bound, boundCode, service_type, orig_tc, orig_en, dest_tc, dest_en }
+    let stopsList = []; // Ordered array from route-stop API
+    let stopDetails = {}; // Cache map for stop attributes: { stopId: { name_tc, name_en, lat, long } }
+    let loadingStops = false;
+    
+    // Split ETA Data Structures for Stability
+    let etaData = []; // Primary ETA predictions loaded directly for the selected stop (highly reliable)
+    let backgroundEtaData = []; // Secondary background list loaded via route-eta for sidebar badges
+    
+    let selectedStopId = null;
+    let refreshTimer = 30;
+    let timerInterval = null;
+
+    // Leaflet Objects
+    let map = null;
+    let tileLayer = null;
+    let markersGroup = null;
+    let lineLayer = null;
+
+    // Translation Dictionary
+    const t = {
+      tc: {
+        title: '九巴 KMB 實時到站時間 (ETA)',
+        subtitle: '直連政府開源 API • 實時到站預測',
+        searchPlaceholder: '輸入巴士路線 (例如 1A, 968, 68X)',
+        searchBtn: '搜尋路線',
+        selectDirection: '選擇行車方向',
+        to: '往',
+        stopsTitle: '中途站點',
+        etaTitle: '即時到站預測 (ETA)',
+        upcomingBuses: '即將抵達的 3 班車',
+        noEta: '暫無即時到站時間資訊。',
+        min: '分鐘',
+        arriving: '即將抵達',
+        scheduled: '預定班次',
+        normal: '實時班次',
+        remarks: '備註',
+        refreshIn: '秒後自動更新',
+        refreshNow: '立即手動更新',
+        stopCount: '個巴士站',
+        routePath: '地圖 (MAP)',
+        about: '數據來源：香港政府 DATA.GOV.HK 交通資料 API。更新頻率為每分鐘。',
+        noRouteFound: '找不到此路線，請檢查輸入是否正確。',
+        loadingStopsMsg: '正在下載路線站點與坐標...',
+        loadingEtaMsg: '正在更新實時到站預測...',
+        backToSearch: '重新搜尋',
+        allStopsEta: '全線到站總覽',
+        viewSingle: '單站檢視',
+        viewAll: '全線檢視',
+        due: '到站',
+        ontime: '準時',
+        stopIdLabel: '站點編號',
+        mapInteractive: '📍 實時 Google Maps 互動地圖',
+        mapHint: '可點擊地圖標記直接切換站點'
+      },
+      en: {
+        title: 'KMB Real-time ETA Dashboard',
+        subtitle: 'Direct Gov API Connection • Real-time Arrival Prediction',
+        searchPlaceholder: 'Enter bus route (e.g. 1A, 968, 68X)',
+        searchBtn: 'Search Route',
+        selectDirection: 'Select Direction',
+        to: 'To',
+        stopsTitle: 'Bus Stops',
+        etaTitle: 'Arrival Prediction (ETA)',
+        upcomingBuses: 'Upcoming 3 Buses',
+        noEta: 'No real-time arrival schedule available.',
+        min: 'min',
+        arriving: 'Arriving',
+        scheduled: 'Scheduled',
+        normal: 'Real-time',
+        remarks: 'Remarks',
+        refreshIn: 'seconds to auto-refresh',
+        refreshNow: 'Refresh Now',
+        stopCount: 'stops',
+        routePath: 'MAP',
+        about: 'Data Source: HK Gov DATA.GOV.HK Transport Open API. ETA updates every minute.',
+        noRouteFound: 'Route not found. Please verify the route number.',
+        loadingStopsMsg: 'Loading route stops and coordinates...',
+        loadingEtaMsg: 'Updating real-time arrival estimates...',
+        backToSearch: 'Reset Search',
+        allStopsEta: 'All Stops Overview',
+        viewSingle: 'Single Stop',
+        viewAll: 'Full Timeline',
+        due: 'Due',
+        ontime: 'On time',
+        stopIdLabel: 'ID',
+        mapInteractive: '📍 Interactive Google Maps',
+        mapHint: 'Click any map marker to switch stops'
+      }
+    };
+
+    // DOM Initializer
+    window.addEventListener('DOMContentLoaded', () => {
+      renderLanguageStrings();
+      startInterval();
+    });
+
+    // Helper: Swap Display Language
+    function toggleLanguage() {
+      lang = lang === 'tc' ? 'en' : 'tc';
+      document.getElementById('lang-btn-text').innerText = lang === 'tc' ? 'English' : '繁體中文';
+      renderLanguageStrings();
+      
+      // Re-trigger layout updates
+      if (activeRoute) {
+        renderDirectionUI();
+        renderStopsUI();
+        renderEtaPredictions();
+        renderMapUI();
+      }
+    }
+
+    // Apply translations directly to selectors
+    function renderLanguageStrings() {
+      document.getElementById('header-title').innerText = t[lang].title;
+      document.getElementById('header-subtitle').innerText = t[lang].subtitle;
+      document.getElementById('search-card-title').innerText = t[lang].searchBtn;
+      document.getElementById('search-input').placeholder = t[lang].searchPlaceholder;
+      document.getElementById('search-btn-text').innerText = t[lang].searchBtn;
+      document.getElementById('direction-card-title').innerText = t[lang].selectDirection;
+      document.getElementById('stops-card-title').innerText = t[lang].stopsTitle;
+      document.getElementById('welcome-title').innerText = lang === 'tc' ? '開始您的實時巴士查詢' : 'Start Your Live Bus ETA Inquiry';
+      document.getElementById('welcome-text').innerText = lang === 'tc'
+        ? '請在左側輸入或選擇想查詢的巴士路線編號（例如 1A 往返尖沙咀碼頭與中秀茂坪），接著即刻為您加載最新即時班次預報！'
+        : 'Please enter a bus route number in the search bar on the left (e.g., 1A) to fetch its direction paths, stop sequences, and live-updating ETA predictions.';
+      document.getElementById('welcome-tip').innerText = lang === 'tc'
+        ? '本系統不預載龐大的巴士站數據字典，而是當您點擊「搜尋路線」按鈕時才按需發起 API 呼叫，提供最精確且流暢的極致體驗。'
+        : 'To ensure fast responsiveness, this system queries government open APIs on-demand only upon route search clicks, saving data payload and browser memory.';
+      document.getElementById('eta-status-label').innerText = t[lang].etaTitle;
+      document.getElementById('refresh-btn-title').title = t[lang].refreshNow;
+      document.getElementById('upcoming-buses-title').innerText = t[lang].upcomingBuses;
+      document.getElementById('route-path-title').innerText = t[lang].routePath;
+      document.getElementById('map-scale-note').innerText = t[lang].mapInteractive;
+      document.getElementById('map-interact-note').innerText = t[lang].mapHint;
+      document.getElementById('footer-source-text').innerText = t[lang].about;
+    }
+
+    // Interval driver for the 30 seconds countdown progress
+    function startInterval() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        if (!activeRoute || !selectedDirection) return;
+        
+        refreshTimer--;
+        if (refreshTimer <= 0) {
+          fetchEtaOnly();
+          refreshTimer = 30;
+        }
+        
+        updateCountdownUI();
+      }, 1000);
+    }
+
+    // Sync Timer Circular state in UI
+    function updateCountdownUI() {
+      const circle = document.getElementById('countdown-progress-circle');
+      const text = document.getElementById('countdown-timer-text');
+      if (circle && text) {
+        text.innerText = `${refreshTimer}s`;
+        const percent = (refreshTimer / 30) * 100;
+        circle.style.strokeDashoffset = 100 - percent;
+      }
+    }
+
+    // Handle standard user route form queries
+    function handleSearchSubmit(event) {
+      event.preventDefault();
+      const val = document.getElementById('search-input').value;
+      triggerRouteSearch(val);
+    }
+
+    // Main Engine: Perform route and direction fetches
+    async function triggerRouteSearch(routeVal) {
+      const cleanQuery = routeVal.trim().toUpperCase();
+      if (!cleanQuery) return;
+
+      setSearchLoadingState(true);
+      hideError();
+
+      // Reset application panels state
+      activeRoute = null;
+      directions = [];
+      selectedDirection = null;
+      stopsList = [];
+      selectedStopId = null;
+      etaData = [];
+      backgroundEtaData = [];
+      
+      toggleStatePanels(false);
+
+      try {
+        const [outboundRes, inboundRes] = await Promise.allSettled([
+          fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route/${cleanQuery}/outbound/1`),
+          fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route/${cleanQuery}/inbound/1`)
+        ]);
+
+        const dirsFound = [];
+
+        if (outboundRes.status === 'fulfilled' && outboundRes.value.ok) {
+          const outData = await outboundRes.value.json();
+          if (outData.data && Object.keys(outData.data).length > 0) {
+            dirsFound.push({
+              bound: 'outbound',
+              boundCode: 'O',
+              service_type: '1',
+              orig_tc: outData.data.orig_tc,
+              orig_en: outData.data.orig_en,
+              dest_tc: outData.data.dest_tc,
+              dest_en: outData.data.dest_en,
+            });
+          }
+        }
+
+        if (inboundRes.status === 'fulfilled' && inboundRes.value.ok) {
+          const inData = await inboundRes.value.json();
+          if (inData.data && Object.keys(inData.data).length > 0) {
+            dirsFound.push({
+              bound: 'inbound',
+              boundCode: 'I',
+              service_type: '1',
+              orig_tc: inData.data.orig_tc,
+              orig_en: inData.data.orig_en,
+              dest_tc: inData.data.dest_tc,
+              dest_en: inData.data.dest_en,
+            });
+          }
+        }
+
+        if (dirsFound.length === 0) {
+          const altRes = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${cleanQuery}/outbound/1`);
+          if (altRes.ok) {
+            const altData = await altRes.json();
+            if (altData.data && altData.data.length > 0) {
+              dirsFound.push({
+                bound: 'outbound',
+                boundCode: 'O',
+                service_type: '1',
+                orig_tc: lang === 'tc' ? '香港' : 'Hong Kong',
+                orig_en: 'Hong Kong',
+                dest_tc: lang === 'tc' ? '目的地' : 'Destination',
+                dest_en: 'Destination',
+              });
+            }
+          }
+        }
+
+        if (dirsFound.length > 0) {
+          directions = dirsFound;
+          activeRoute = cleanQuery;
+          renderDirectionUI();
+          selectDirection(0);
+        } else {
+          showError(t[lang].noRouteFound);
+        }
+      } catch (err) {
+        console.error(err);
+        showError('An error occurred while fetching route data. Please check connection and try again.');
+      } finally {
+        setSearchLoadingState(false);
+      }
+    }
+
+    function toggleStatePanels(hasActiveRoute) {
+      const welcome = document.getElementById('welcome-panel');
+      const etaCard = document.getElementById('eta-card');
+      const mapCard = document.getElementById('map-card');
+      const directionCard = document.getElementById('direction-card');
+      const stopsCard = document.getElementById('stops-card');
+
+      if (hasActiveRoute) {
+        welcome.classList.add('hidden');
+        etaCard.classList.remove('hidden');
+        mapCard.classList.remove('hidden');
+        directionCard.classList.remove('hidden');
+        stopsCard.classList.remove('hidden');
+      } else {
+        welcome.classList.remove('hidden');
+        etaCard.classList.add('hidden');
+        mapCard.classList.add('hidden');
+        directionCard.classList.add('hidden');
+        stopsCard.classList.add('hidden');
+      }
+    }
+
+    async function selectDirection(idx) {
+      selectedDirection = directions[idx];
+      renderDirectionUI();
+      
+      loadingStops = true;
+      document.getElementById('stops-loader').classList.remove('hidden');
+      refreshTimer = 30;
+      updateCountdownUI();
+
+      try {
+        const routeStopRes = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${activeRoute}/${selectedDirection.bound}/${selectedDirection.service_type}`);
+        const routeStopData = await routeStopRes.json();
+
+        if (routeStopData.data && routeStopData.data.length > 0) {
+          stopsList = routeStopData.data.sort((a, b) => a.seq - b.seq);
+          
+          if (stopsList.length > 0) {
+            selectedStopId = stopsList[0].stop;
+          }
+
+          await fetchStopEtaData();
+          fetchRouteEtaDataBackground();
+
+          toggleStatePanels(true);
+
+          renderStopsUI();
+          renderEtaPredictions();
+
+          await fetchStopDetailsInBatches(stopsList);
+        }
+      } catch (err) {
+        console.error('Error fetching stop lists/ETAs:', err);
+      } finally {
+        loadingStops = false;
+        document.getElementById('stops-loader').classList.add('hidden');
+      }
+    }
+
+    async function fetchStopEtaData() {
+      if (!selectedStopId) return;
+      try {
+        const stopEtaRes = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${selectedStopId}`);
+        if (stopEtaRes.ok) {
+          const stopEtaJson = await stopEtaRes.json();
+          etaData = stopEtaJson.data || [];
+        }
+      } catch (e) {
+        console.error("Error fetching stop ETA:", e);
+      }
+    }
+
+    async function fetchRouteEtaDataBackground() {
+      if (!activeRoute || !selectedDirection) return;
+      try {
+        const routeEtaRes = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-eta/${activeRoute}/${selectedDirection.service_type}`);
+        if (routeEtaRes.ok) {
+          const routeEtaJson = await routeEtaRes.json();
+          backgroundEtaData = routeEtaJson.data || [];
+          renderStopsUI();
+        }
+      } catch (e) {
+        console.error("Background route ETA fetch failed:", e);
+      }
+    }
+
+    async function fetchStopDetailsInBatches(stops) {
+      const uncachedStopIds = stops
+        .map(s => s.stop)
+        .filter(id => !stopDetails[id]);
+
+      if (uncachedStopIds.length === 0) {
+        renderStopsUI();
+        renderEtaPredictions();
+        renderMapUI();
+        return;
+      }
+
+      const chunkSize = 8;
+      for (let i = 0; i < uncachedStopIds.length; i += chunkSize) {
+        const chunk = uncachedStopIds.slice(i, i + chunkSize);
+        await Promise.allSettled(
+          chunk.map(async (stopId) => {
+            try {
+              const stopRes = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop/${stopId}`);
+              if (stopRes.ok) {
+                const resData = await stopRes.json();
+                if (resData.data) {
+                  stopDetails[stopId] = {
+                    name_tc: resData.data.name_tc,
+                    name_en: resData.data.name_en,
+                    lat: parseFloat(resData.data.lat),
+                    long: parseFloat(resData.data.long)
+                  };
+                }
+              }
+            } catch (e) {
+              console.error('Failed to load stop ID details: ', stopId, e);
+            }
+          })
+        );
+        
+        renderStopsUI();
+        renderEtaPredictions();
+        renderMapUI();
+      }
+    }
+
+    async function fetchEtaOnly() {
+      if (!activeRoute || !selectedDirection || !selectedStopId) return;
+      try {
+        await fetchStopEtaData();
+        fetchRouteEtaDataBackground();
+        renderEtaPredictions();
+        renderStopsUI();
+      } catch (err) {
+        console.error('Error refreshing ETAs:', err);
+      }
+    }
+
+    function triggerManualRefresh() {
+      fetchEtaOnly();
+      refreshTimer = 30;
+      updateCountdownUI();
+    }
+
+    function calculateMinutesLeft(etaTimeStr) {
+      if (!etaTimeStr) return null;
+      const now = new Date();
+      const etaTime = new Date(etaTimeStr);
+      const diffMs = etaTime - now;
+      return Math.ceil(diffMs / 60000);
+    }
+
+    function resetSearch() {
+      activeRoute = null;
+      directions = [];
+      selectedDirection = null;
+      stopsList = [];
+      selectedStopId = null;
+      etaData = [];
+      backgroundEtaData = [];
+      document.getElementById('search-input').value = '';
+      toggleStatePanels(false);
+      
+      if (markersGroup) markersGroup.clearLayers();
+      if (lineLayer) lineLayer.clearLayers();
+    }
+
+    function renderDirectionUI() {
+      const container = document.getElementById('directions-list');
+      container.innerHTML = '';
+      
+      if (directions.length > 0) {
+        document.getElementById('direction-card').classList.remove('hidden');
+      }
+
+      directions.forEach((dir, idx) => {
+        const isSelected = selectedDirection?.bound === dir.bound;
+        
+        const btn = document.createElement('button');
+        btn.onclick = () => selectDirection(idx);
+        btn.className = `w-full p-4 rounded-xl border text-left transition-all relative overflow-hidden ${
+          isSelected
+            ? 'bg-gradient-to-r from-red-600/20 to-slate-800 border-red-500 text-red-100 shadow-md'
+            : 'bg-slate-900/40 border-slate-700 hover:border-slate-600 text-slate-300'
+        }`;
+
+        const accentHighlight = isSelected ? '<div class="absolute left-0 top-0 bottom-0 w-1 bg-red-500"></div>' : '';
+        const boundLabel = dir.bound === 'outbound' ? (lang === 'tc' ? '去程 Outbound' : 'Outbound') : (lang === 'tc' ? '回程 Inbound' : 'Inbound');
+        const orig = lang === 'tc' ? dir.orig_tc : dir.orig_en;
+        const dest = lang === 'tc' ? dir.dest_tc : dir.dest_en;
+
+        btn.innerHTML = `
+          ${accentHighlight}
+          <div class="flex justify-between items-center">
+            <div>
+              <span class="text-xs font-semibold text-slate-400 uppercase block mb-0.5">
+                ${boundLabel}
+              </span>
+              <span class="text-sm font-bold block">
+                ${orig} <span class="mx-2 text-slate-400">➔</span> ${dest}
+              </span>
+            </div>
+            <div class="p-1 rounded-full ${isSelected ? 'bg-red-500/20 text-red-400' : 'text-slate-600'}">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" width="20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z" clip-rule="evenodd" />
+              </svg>
+            </div>
+          </div>
+        `;
+        container.appendChild(btn);
+      });
+    }
+
+    function renderStopsUI() {
+      const container = document.getElementById('stops-list-container');
+      container.innerHTML = '';
+
+      document.getElementById('stops-count').innerText = `${stopsList.length} ${t[lang].stopCount}`;
+
+      stopsList.forEach((stopItem) => {
+        const details = stopDetails[stopItem.stop];
+        const isSelected = selectedStopId === stopItem.stop;
+        
+        const stopEtas = backgroundEtaData.filter(eta => 
+          eta.stop === stopItem.stop && 
+          (eta.dir === selectedDirection?.boundCode || eta.dir === selectedDirection?.bound.substring(0, 1).toUpperCase()) &&
+          parseInt(eta.service_type) === parseInt(selectedDirection.service_type)
+        ).sort((a, b) => a.eta_seq - b.eta_seq);
+        
+        const firstEtaMin = stopEtas[0] ? calculateMinutesLeft(stopEtas[0].eta) : null;
+        
+        let badgeHTML = '<span class="text-[10px] text-slate-600 font-mono">--</span>';
+        if (firstEtaMin !== null) {
+          const badgeClass = firstEtaMin <= 3
+            ? 'bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse'
+            : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+          const label = firstEtaMin <= 0 ? t[lang].due : `${firstEtaMin}${t[lang].min}`;
+          badgeHTML = `<span class="text-[10px] px-2 py-0.5 rounded-full font-bold ${badgeClass}">${label}</span>`;
+        }
+
+        const stopName = details ? (lang === 'tc' ? details.name_tc : details.name_en) : `Stop #${stopItem.seq}`;
+
+        const row = document.createElement('button');
+        row.onclick = async () => {
+          selectedStopId = stopItem.stop;
+          renderStopsUI();
+          
+          await fetchStopEtaData();
+          renderEtaPredictions();
+          renderMapUI();
+        };
+        row.className = `w-full text-left p-3 rounded-xl border flex items-center justify-between transition-all group ${
+          isSelected
+            ? 'bg-slate-700 border-red-500 text-white shadow-md'
+            : 'bg-slate-900/30 border-slate-700/60 hover:bg-slate-700/30 text-slate-300'
+        }`;
+
+        row.innerHTML = `
+          <div class="flex items-center space-x-3 min-w-0">
+            <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+              isSelected ? 'bg-red-500 text-white' : 'bg-slate-800 text-slate-400 border border-slate-700'
+            }">
+              ${stopItem.seq}
+            </div>
+            
+            <div class="min-w-0">
+              <p class="text-sm font-bold truncate">
+                ${stopName}
+              </p>
+              <p class="text-[10px] text-slate-500 truncate uppercase">
+                ${t[lang].stopIdLabel}: ${stopItem.stop}
+              </p>
+            </div>
+          </div>
+
+          <div class="shrink-0 flex items-center space-x-1.5 ml-2">
+            ${badgeHTML}
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 transition-transform group-hover:translate-x-0.5 ${
+              isSelected ? 'text-red-400' : 'text-slate-600'
+            }" viewBox="0 0 20 20" fill="currentColor" width="16">
+              <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+            </svg>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function renderEtaPredictions() {
+      if (!selectedStopId || !selectedDirection) return;
+
+      document.getElementById('active-route-badge').innerText = activeRoute;
+      document.getElementById('active-route-dest').innerText = `${t[lang].to} ${lang === 'tc' ? selectedDirection.dest_tc : selectedDirection.dest_en}`;
+      
+      const currentStopName = stopDetails[selectedStopId]
+        ? (lang === 'tc' ? stopDetails[selectedStopId].name_tc : stopDetails[selectedStopId].name_en)
+        : '...';
+      document.getElementById('active-stop-name').innerText = currentStopName;
+
+      const filteredEtas = etaData
+        .filter(eta => 
+          eta.route.trim().toUpperCase() === activeRoute.trim().toUpperCase() && 
+          (eta.dir === selectedDirection.boundCode || eta.dir === selectedDirection.bound.substring(0, 1).toUpperCase()) &&
+          parseInt(eta.service_type) === parseInt(selectedDirection.service_type)
+        )
+        .sort((a, b) => {
+          if (a.eta_seq !== b.eta_seq) return a.eta_seq - b.eta_seq;
+          return new Date(a.eta) - new Date(b.eta);
+        });
+
+      const seenTimes = new Set();
+      const matchingEtas = [];
+      filteredEtas.forEach(eta => {
+        const timeKey = eta.eta ? new Date(eta.eta).getTime() : `null-${eta.eta_seq}`;
+        if (!seenTimes.has(timeKey)) {
+          seenTimes.add(timeKey);
+          matchingEtas.push(eta);
+        }
+      });
+
+      const listContainer = document.getElementById('eta-upcoming-list');
+      listContainer.innerHTML = '';
+
+      if (matchingEtas.length > 0) {
+        matchingEtas.forEach((eta, idx) => {
+          const minsLeft = calculateMinutesLeft(eta.eta);
+          const isScheduled = eta.rmk_tc === '預定班次' || eta.rmk_en?.includes('Scheduled');
+          
+          let itemStyles = 'bg-slate-900/40 border-slate-700/50';
+          if (minsLeft !== null) {
+            if (minsLeft <= 3) {
+              itemStyles = 'bg-gradient-to-r from-red-500/10 to-slate-900 border-red-500/40 shadow';
+            } else if (minsLeft <= 8) {
+              itemStyles = 'bg-gradient-to-r from-amber-500/5 to-slate-900 border-amber-500/30';
+            } else {
+              itemStyles = 'bg-gradient-to-r from-emerald-500/5 to-slate-900 border-emerald-500/30';
+            }
+          }
+
+          const localTime = eta.eta ? new Date(eta.eta).toLocaleTimeString(lang === 'tc' ? 'zh-HK' : 'en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          }) : '--:--';
+
+          const remark = lang === 'tc' ? (eta.rmk_tc || t[lang].ontime) : (eta.rmk_en || t[lang].ontime);
+          const boundTypeLabel = isScheduled ? t[lang].scheduled : t[lang].normal;
+          const boundTypeClass = isScheduled 
+            ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' 
+            : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+
+          let minutesDisplay = `<span class="text-sm text-slate-500 italic">No ETA</span>`;
+          if (minsLeft !== null) {
+            if (minsLeft <= 0) {
+              minutesDisplay = `<span class="text-xl font-extrabold text-red-500 animate-bounce">${t[lang].arriving}</span>`;
+            } else {
+              minutesDisplay = `
+                <div class="flex items-baseline space-x-1">
+                  <span class="text-3xl font-black leading-none tracking-tighter text-white">${minsLeft}</span>
+                  <span class="text-xs text-slate-400 font-bold">${t[lang].min}</span>
+                </div>
+              `;
+            }
+          }
+
+          const node = document.createElement('div');
+          node.className = `p-4 rounded-2xl border flex items-center justify-between transition-all ${itemStyles}`;
+          node.innerHTML = `
+            <div class="flex items-center space-x-4">
+              <div class="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-extrabold text-slate-300 shadow">
+                ${idx + 1}
+              </div>
+              <div>
+                <div class="flex items-center space-x-2">
+                  <span class="text-lg font-black tracking-tight text-white">${localTime}</span>
+                  <span class="text-[10px] px-2 py-0.5 rounded-full border ${boundTypeClass}">${boundTypeLabel}</span>
+                </div>
+                <p class="text-xs text-slate-500 mt-1">${remark}</p>
+              </div>
+            </div>
+            <div class="text-right flex flex-col items-end">
+              ${minutesDisplay}
+            </div>
+          `;
+          listContainer.appendChild(node);
+        });
+      } else {
+        listContainer.innerHTML = `
+          <div class="py-8 text-center bg-slate-900/40 rounded-2xl border border-slate-800 text-slate-500 text-sm">
+            ${t[lang].noEta}
+          </div>
+        `;
+      }
+    }
+
+    // Initialize and update the Leaflet map styled with Google Maps Tiles
+    function renderMapUI() {
+      const gMapLang = lang === 'tc' ? 'zh-HK' : 'en';
+
+      // Setup map layers dynamically
+      if (!map) {
+        map = L.map('leaflet-map', {
+          zoomControl: true,
+          scrollWheelZoom: true
+        }).setView([22.3193, 114.1694], 12);
+
+        markersGroup = L.layerGroup().addTo(map);
+        lineLayer = L.layerGroup().addTo(map);
+      }
+
+      // Update tile layer with corresponding localized language from Google Tile Server
+      if (tileLayer) {
+        map.removeLayer(tileLayer);
+      }
+
+      // Use Google Maps tile server. Parameters: lyrs=m (Standard Roadmap), hl=Language selection code
+      tileLayer = L.tileLayer(`https://mt1.google.com/vt/lyrs=m&hl=${gMapLang}&x={x}&y={y}&z={z}`, {
+        attribution: '&copy; Google Maps',
+        maxZoom: 20
+      }).addTo(map);
+
+      // Clear route tracks and markers
+      markersGroup.clearLayers();
+      lineLayer.clearLayers();
+
+      const activeStopsDetails = stopsList
+        .map(s => {
+          return { seq: s.seq, stopId: s.stop, ...stopDetails[s.stop] };
+        })
+        .filter(d => d && d.lat && d.long);
+
+      if (activeStopsDetails.length === 0) return;
+
+      const latlngs = activeStopsDetails.map(stop => [stop.lat, stop.long]);
+
+      // Fit layout to view full list bounds
+      if (latlngs.length > 0) {
+        const bounds = L.latLngBounds(latlngs);
+        map.fitBounds(bounds, { padding: [30, 30] });
+      }
+
+      // Plot route sequence bubbles on the Google Map
+      activeStopsDetails.forEach((stop) => {
+        const isSelected = selectedStopId === stop.stopId;
+        const name = lang === 'tc' ? stop.name_tc : stop.name_en;
+
+        const markerColor = isSelected ? '#ef4444' : '#1e293b'; 
+        const markerBorder = isSelected ? '#ffffff' : '#475569';
+        const markerSize = isSelected ? 26 : 22;
+        const fontSize = isSelected ? '12px' : '10px';
+
+        const customIcon = L.divIcon({
+          html: `<div style="
+            background-color: ${markerColor};
+            color: #ffffff;
+            width: ${markerSize}px;
+            height: ${markerSize}px;
+            border-radius: 50%;
+            border: 2px solid ${markerBorder};
+            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: ${fontSize};
+            font-weight: bold;
+            font-family: inherit;
+            transition: all 0.2s ease;
+          ">${stop.seq}</div>`,
+          className: 'custom-leaflet-marker',
+          iconSize: [markerSize, markerSize],
+          iconAnchor: [markerSize/2, markerSize/2]
+        });
+
+        L.marker([stop.lat, stop.long], { icon: customIcon })
+          .addTo(markersGroup)
+          .bindPopup(`
+            <div class="text-slate-100 font-sans p-1">
+              <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Stop ${stop.seq}</div>
+              <div class="text-sm font-black text-white my-0.5">${name}</div>
+              <div class="text-[9px] text-slate-500 font-mono mb-2">ID: ${stop.stopId}</div>
+              <button onclick="selectStopFromMap('${stop.stopId}')" class="w-full bg-red-600 hover:bg-red-700 text-white text-[11px] font-bold py-1 px-2 rounded transition-colors text-center cursor-pointer">
+                ${lang === 'tc' ? '選取此站' : 'Select Stop'}
+              </button>
+            </div>
+          `);
+      });
+    }
+
+    // Global selector proxy called by Map Popup buttons
+    window.selectStopFromMap = async function(stopId) {
+      selectedStopId = stopId;
+      renderStopsUI();
+      
+      await fetchStopEtaData();
+      renderEtaPredictions();
+      renderMapUI();
+    };
+
+    function setSearchLoadingState(isLoading) {
+      loading = isLoading;
+      const btn = document.getElementById('search-button');
+      if (isLoading) {
+        btn.disabled = true;
+        btn.innerHTML = `
+          <svg class="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+        `;
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = `<span id="search-btn-text">${t[lang].searchBtn}</span>`;
+      }
+    }
+
+    function showError(msg) {
+      const errBox = document.getElementById('search-error');
+      const errTxt = document.getElementById('error-message');
+      errTxt.innerText = msg;
+      errBox.classList.remove('hidden');
+    }
+
+    function hideError() {
+      const errBox = document.getElementById('search-error');
+      errBox.classList.add('hidden');
+    }
+  </script>
+</body>
+</html>
